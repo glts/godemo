@@ -1,4 +1,5 @@
-(ns go.core
+(ns godemo.core
+  (:require [clojure.core.async :refer [>! <! <!! chan go timeout]])
   (:import [java.net URL]
            [java.io IOException]
            [java.util.concurrent Executors ExecutorCompletionService TimeUnit]))
@@ -21,21 +22,21 @@
       (str lang " " size " [" t "]"))
     (catch IOException e (println (.getMessage e)))))
 
-(defn go-1 []
+(defn godemo-1 []
   (try
     (let [f (fn [[k,v]] #(println (fetch k v)))
           fns (map f urls)]
       (dorun (apply pcalls fns)))
     (finally (shutdown-agents))))
 
-(defn go-2 []
+(defn godemo-2 []
   (let [pool (Executors/newFixedThreadPool 8)
         f (fn [[k,v]] #(println (fetch k v)))
         fns (map f urls)
         rets (.invokeAll pool fns)]
     (.shutdown pool))) ; TODO timeout
 
-(defn go-3 []
+(defn godemo-3 []
   (let [pool (Executors/newFixedThreadPool 8)
         cs (ExecutorCompletionService. pool)
         f (fn [[k,v]] #(fetch k v))
@@ -44,7 +45,7 @@
     (doseq [_ fns] (println (.. cs take get)))
     (.shutdown pool)))
 
-(defn go-4 []
+(defn godemo-4 []
   (let [pool (Executors/newFixedThreadPool 8)
         cs (ExecutorCompletionService. pool)
         f (fn [[k,v]] #(fetch k v))
@@ -57,8 +58,26 @@
               (recur (dec n)))
           (println "Timed out"))))
           ; TODO timeout doesn't really work yet
-          ; make threads interruptable
+          ; make threads interruptible
     (.shutdown pool)))
 
+
+;; TODO Try core.async
+
+(defn godemo-5 []
+  (let [ch (chan)
+        t (timeout 500)]
+    (doseq [[k v] urls]
+      (go (>! ch (fetch k v))))
+    (<!!
+      (go (loop [n (count urls)]
+            (when (pos? n)
+              (let [[v p] (alts! [ch t])]
+                (if (= p ch)
+                  (do (println v) (recur (dec n)))
+                  (println "Timed out")))))))))
+
+;; TODO clojure.org seems to have a redirect installed since the response size is 0
+
 (defn -main [& args]
-  (go-4))
+  (godemo-5))

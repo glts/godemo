@@ -1,5 +1,5 @@
 (ns godemo.core
-  (:require [clojure.core.async :refer [>! <! <!! chan go timeout]])
+  (:require [clojure.core.async :refer [>! >!! <! <!! alts! alts!! chan go timeout thread]])
   (:import [java.net URL]
            [java.io IOException]
            [java.util.concurrent Executors ExecutorCompletionService TimeUnit]))
@@ -61,23 +61,36 @@
           ; make threads interruptible
     (.shutdown pool)))
 
-
-;; TODO Try core.async
-
+;; Using core.async with OS threads
 (defn godemo-5 []
   (let [ch (chan)
-        t (timeout 500)]
+        nurls (count urls)
+        t (timeout 1000)]
+    (doseq [[k v] urls]
+      (thread (>!! ch (fetch k v))))
+    (loop [n 0]
+      (when (< n nurls)
+        (let [[v p] (alts!! [ch t])]
+          (if (= p ch)
+            (do (println v) (recur (inc n)))
+            (println "Timed out")))))))
+
+;; Using core.async with go blocks
+(defn godemo-6 []
+  (let [ch (chan)
+        nurls (count urls)
+        t (timeout 1000)]
     (doseq [[k v] urls]
       (go (>! ch (fetch k v))))
     (<!!
-      (go (loop [n (count urls)]
-            (when (pos? n)
+      (go (loop [n 0]
+            (when (< n nurls)
               (let [[v p] (alts! [ch t])]
                 (if (= p ch)
-                  (do (println v) (recur (dec n)))
+                  (do (println v) (recur (inc n)))
                   (println "Timed out")))))))))
 
 ;; TODO clojure.org seems to have a redirect installed since the response size is 0
 
 (defn -main [& args]
-  (godemo-5))
+  (godemo-6))
